@@ -1,0 +1,31 @@
+# IG-Shop-Agent V2 - Production Dependencies
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+sqlalchemy==2.0.25
+pydantic-settings==2.1.0
+python-jose[cryptography]==3.3.0
+httpx==0.28.1
+openai==1.93.0
+python-dotenv==1.0.0
+
+# Database drivers (both SQLite and PostgreSQL support)
+psycopg2-binary==2.9.9  # PostgreSQL
+aiosqlite==0.19.0       # Async SQLite
+
+# Additional production dependencies
+gunicorn==21.2.0        # Production WSGI server
+alembic==1.13.1         # Database migrations
+redis==5.0.1            # Caching (optional)
+celery==5.3.4           # Background tasks (optional)
+
+# Monitoring and logging
+structlog==23.2.0       # Structured logging
+
+# Security
+cryptography==42.0.2
+
+# Development and testing (optional)
+pytest==7.4.4
+pytest-asyncio==0.21.1
+black==23.12.1
+flake8==7.0.0 

@@ -1,0 +1,27 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "environment": {
+      "value": "dev"
+    },
+    "appName": {
+      "value": "insta-agent"
+    },
+    "location": {
+      "value": "eastus"
+    },
+    "facebookAppId": {
+      "value": "your_facebook_app_id"
+    },
+    "facebookAppSecret": {
+      "value": "your_facebook_app_secret"
+    },
+    "openAiApiKey": {
+      "value": "your_openai_api_key_here"
+    },
+    "adminEmail": {
+      "value": "admin@instagramaiagent.com"
+    }
+  }
+} 

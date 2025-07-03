@@ -1,0 +1,14 @@
+{
+  "builds": [
+    {
+      "src": "backend/main.py",
+      "use": "@railway/python"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "backend/main.py"
+    }
+  ]
+} 

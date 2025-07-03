@@ -1,0 +1,287 @@
+name: Infrastructure Deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy infrastructure to'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+      action:
+        description: 'Deployment action'
+        required: true
+        default: 'deploy'
+        type: choice
+        options:
+          - deploy
+          - validate
+          - destroy
+      azure_subscription_id:
+        description: 'Azure Subscription ID (optional override)'
+        required: false
+        type: string
+
+env:
+  AZURE_REGION: 'eastus'
+  RESOURCE_GROUP_PREFIX: 'rg-insta-agent'
+
+jobs:
+  # Infrastructure Validation
+  validate:
+    name: Validate Infrastructure
+    runs-on: ubuntu-latest
+    if: github.event.inputs.action == 'validate' || github.event.inputs.action == 'deploy'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set environment credentials
+      run: |
+        ENV_UPPER=$(echo "${{ github.event.inputs.environment }}" | tr '[:lower:]' '[:upper:]')
+        echo "ENV_UPPER=$ENV_UPPER" >> $GITHUB_ENV
+
+    - name: Login to Azure
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets[format('AZURE_CREDENTIALS_{0}', env.ENV_UPPER)] }}
+
+    - name: Set deployment variables
+      run: |
+        echo "SUBSCRIPTION_ID=${{ github.event.inputs.azure_subscription_id || secrets[format('AZURE_SUBSCRIPTION_ID_{0}', env.ENV_UPPER)] }}" >> $GITHUB_ENV
+        echo "RESOURCE_GROUP_NAME=${{ env.RESOURCE_GROUP_PREFIX }}-${{ github.event.inputs.environment }}" >> $GITHUB_ENV
+        echo "DEPLOYMENT_NAME=infrastructure-$(date +%Y%m%d%H%M%S)" >> $GITHUB_ENV
+
+    - name: Validate Bicep template
+      run: |
+        az deployment group validate \
+          --resource-group "${{ env.RESOURCE_GROUP_NAME }}" \
+          --template-file azure/bicep/main.bicep \
+          --parameters @azure/bicep/parameters.${{ github.event.inputs.environment }}.json \
+          --parameters facebookAppId="${{ secrets.FACEBOOK_APP_ID }}" \
+                      facebookAppSecret="${{ secrets.FACEBOOK_APP_SECRET }}" \
+                      openAiApiKey="${{ secrets.OPENAI_API_KEY }}" \
+                      adminEmail="${{ secrets.ADMIN_EMAIL }}"
+
+    - name: What-if deployment analysis
+      run: |
+        az deployment group what-if \
+          --resource-group "${{ env.RESOURCE_GROUP_NAME }}" \
+          --template-file azure/bicep/main.bicep \
+          --parameters @azure/bicep/parameters.${{ github.event.inputs.environment }}.json \
+          --parameters facebookAppId="${{ secrets.FACEBOOK_APP_ID }}" \
+                      facebookAppSecret="${{ secrets.FACEBOOK_APP_SECRET }}" \
+                      openAiApiKey="${{ secrets.OPENAI_API_KEY }}" \
+                      adminEmail="${{ secrets.ADMIN_EMAIL }}"
+
+  # Infrastructure Deployment
+  deploy:
+    name: Deploy Infrastructure
+    runs-on: ubuntu-latest
+    needs: validate
+    if: github.event.inputs.action == 'deploy'
+    environment: ${{ github.event.inputs.environment }}
+    
+    outputs:
+      app-service-url: ${{ steps.deploy.outputs.appServiceUrl }}
+      static-web-app-url: ${{ steps.deploy.outputs.staticWebAppUrl }}
+      cosmos-db-endpoint: ${{ steps.deploy.outputs.cosmosDbEndpoint }}
+      key-vault-url: ${{ steps.deploy.outputs.keyVaultUrl }}
+      
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set environment credentials
+      run: |
+        ENV_UPPER=$(echo "${{ github.event.inputs.environment }}" | tr '[:lower:]' '[:upper:]')
+        echo "ENV_UPPER=$ENV_UPPER" >> $GITHUB_ENV
+
+    - name: Login to Azure
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets[format('AZURE_CREDENTIALS_{0}', env.ENV_UPPER)] }}
+
+    - name: Set deployment variables
+      run: |
+        echo "SUBSCRIPTION_ID=${{ github.event.inputs.azure_subscription_id || secrets[format('AZURE_SUBSCRIPTION_ID_{0}', env.ENV_UPPER)] }}" >> $GITHUB_ENV
+        echo "RESOURCE_GROUP_NAME=${{ env.RESOURCE_GROUP_PREFIX }}-${{ github.event.inputs.environment }}" >> $GITHUB_ENV
+        echo "DEPLOYMENT_NAME=infrastructure-$(date +%Y%m%d%H%M%S)" >> $GITHUB_ENV
+
+    - name: Create Resource Group
+      run: |
+        az group create \
+          --name "${{ env.RESOURCE_GROUP_NAME }}" \
+          --location "${{ env.AZURE_REGION }}" \
+          --tags Environment=${{ github.event.inputs.environment }} Project="Instagram AI Agent SaaS"
+
+    - name: Deploy Azure Infrastructure
+      id: deploy
+      run: |
+        DEPLOYMENT_OUTPUT=$(az deployment group create \
+          --name "${{ env.DEPLOYMENT_NAME }}" \
+          --resource-group "${{ env.RESOURCE_GROUP_NAME }}" \
+          --template-file azure/bicep/main.bicep \
+          --parameters @azure/bicep/parameters.${{ github.event.inputs.environment }}.json \
+          --parameters facebookAppId="${{ secrets.FACEBOOK_APP_ID }}" \
+                      facebookAppSecret="${{ secrets.FACEBOOK_APP_SECRET }}" \
+                      openAiApiKey="${{ secrets.OPENAI_API_KEY }}" \
+                      adminEmail="${{ secrets.ADMIN_EMAIL }}" \
+          --output json)
+        
+        echo "Deployment completed successfully"
+        
+        # Extract outputs
+        APP_SERVICE_URL=$(echo $DEPLOYMENT_OUTPUT | jq -r '.properties.outputs.appServiceUrl.value')
+        STATIC_WEB_APP_URL=$(echo $DEPLOYMENT_OUTPUT | jq -r '.properties.outputs.staticWebAppUrl.value')
+        COSMOS_DB_ENDPOINT=$(echo $DEPLOYMENT_OUTPUT | jq -r '.properties.outputs.cosmosDbEndpoint.value')
+        KEY_VAULT_URL=$(echo $DEPLOYMENT_OUTPUT | jq -r '.properties.outputs.keyVaultUrl.value')
+        
+        # Set outputs
+        echo "appServiceUrl=$APP_SERVICE_URL" >> $GITHUB_OUTPUT
+        echo "staticWebAppUrl=$STATIC_WEB_APP_URL" >> $GITHUB_OUTPUT
+        echo "cosmosDbEndpoint=$COSMOS_DB_ENDPOINT" >> $GITHUB_OUTPUT
+        echo "keyVaultUrl=$KEY_VAULT_URL" >> $GITHUB_OUTPUT
+        
+        # Display results
+        echo "### Deployment Results"
+        echo "- App Service URL: $APP_SERVICE_URL"
+        echo "- Static Web App URL: $STATIC_WEB_APP_URL"
+        echo "- Cosmos DB Endpoint: $COSMOS_DB_ENDPOINT"
+        echo "- Key Vault URL: $KEY_VAULT_URL"
+
+    - name: Save deployment outputs
+      run: |
+        mkdir -p deployment-outputs
+        echo '{
+          "appServiceUrl": "${{ steps.deploy.outputs.appServiceUrl }}",
+          "staticWebAppUrl": "${{ steps.deploy.outputs.staticWebAppUrl }}",
+          "cosmosDbEndpoint": "${{ steps.deploy.outputs.cosmosDbEndpoint }}",
+          "keyVaultUrl": "${{ steps.deploy.outputs.keyVaultUrl }}",
+          "environment": "${{ github.event.inputs.environment }}",
+          "deploymentTime": "'$(date -u +%Y-%m-%dT%H:%M:%SZ)'",
+          "commitSha": "${{ github.sha }}"
+        }' > deployment-outputs/${{ github.event.inputs.environment }}.json
+
+    - name: Upload deployment outputs
+      uses: actions/upload-artifact@v4
+      with:
+        name: deployment-outputs-${{ github.event.inputs.environment }}
+        path: deployment-outputs/
+        retention-days: 90
+
+    - name: Notify deployment success
+      uses: 8398a7/action-slack@v3
+      with:
+        status: success
+        text: |
+          🏗️ Infrastructure deployment to ${{ github.event.inputs.environment }} completed successfully!
+          
+          **Resources Deployed:**
+          • App Service: ${{ steps.deploy.outputs.appServiceUrl }}
+          • Frontend: ${{ steps.deploy.outputs.staticWebAppUrl }}
+          • Database: ${{ steps.deploy.outputs.cosmosDbEndpoint }}
+          • Key Vault: ${{ steps.deploy.outputs.keyVaultUrl }}
+        fields: repo,message,commit,author,action,eventName,ref,workflow
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+  # Infrastructure Health Check
+  health-check:
+    name: Infrastructure Health Check
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: github.event.inputs.action == 'deploy'
+    
+    steps:
+    - name: Wait for services to be ready
+      run: sleep 60
+
+    - name: Check App Service health
+      run: |
+        echo "Checking App Service health..."
+        curl -f "${{ needs.deploy.outputs.app-service-url }}/health" || echo "App Service not ready yet"
+
+    - name: Check Static Web App
+      run: |
+        echo "Checking Static Web App..."
+        curl -f "${{ needs.deploy.outputs.static-web-app-url }}" || echo "Static Web App not ready yet"
+
+    - name: Set environment credentials
+      run: |
+        ENV_UPPER=$(echo "${{ github.event.inputs.environment }}" | tr '[:lower:]' '[:upper:]')
+        echo "ENV_UPPER=$ENV_UPPER" >> $GITHUB_ENV
+
+    - name: Login to Azure for resource verification
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets[format('AZURE_CREDENTIALS_{0}', env.ENV_UPPER)] }}
+
+    - name: Verify Cosmos DB
+      run: |
+        echo "Verifying Cosmos DB connectivity..."
+        az cosmosdb show \
+          --resource-group "${{ env.RESOURCE_GROUP_PREFIX }}-${{ github.event.inputs.environment }}" \
+          --name "insta-agent-${{ github.event.inputs.environment }}-cosmos" \
+          --query "documentEndpoint" -o tsv
+
+    - name: Verify Key Vault
+      run: |
+        echo "Verifying Key Vault access..."
+        az keyvault secret list \
+          --vault-name "insta-agent-${{ github.event.inputs.environment }}-kv" \
+          --query "[].name" -o tsv
+
+  # Infrastructure Destruction (Cleanup)
+  destroy:
+    name: Destroy Infrastructure
+    runs-on: ubuntu-latest
+    if: github.event.inputs.action == 'destroy'
+    environment: ${{ github.event.inputs.environment }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Confirm destruction
+      run: |
+        echo "⚠️ WARNING: This will destroy all infrastructure in ${{ github.event.inputs.environment }} environment"
+        echo "Environment: ${{ github.event.inputs.environment }}"
+        echo "Resource Group: ${{ env.RESOURCE_GROUP_PREFIX }}-${{ github.event.inputs.environment }}"
+
+    - name: Set environment credentials
+      run: |
+        ENV_UPPER=$(echo "${{ github.event.inputs.environment }}" | tr '[:lower:]' '[:upper:]')
+        echo "ENV_UPPER=$ENV_UPPER" >> $GITHUB_ENV
+
+    - name: Login to Azure
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets[format('AZURE_CREDENTIALS_{0}', env.ENV_UPPER)] }}
+
+    - name: Delete Resource Group
+      run: |
+        echo "Deleting resource group: ${{ env.RESOURCE_GROUP_PREFIX }}-${{ github.event.inputs.environment }}"
+        az group delete \
+          --name "${{ env.RESOURCE_GROUP_PREFIX }}-${{ github.event.inputs.environment }}" \
+          --yes \
+          --no-wait
+
+    - name: Notify destruction
+      uses: 8398a7/action-slack@v3
+      with:
+        status: success
+        text: |
+          🗑️ Infrastructure destruction initiated for ${{ github.event.inputs.environment }}
+          
+          Resource Group: ${{ env.RESOURCE_GROUP_PREFIX }}-${{ github.event.inputs.environment }}
+          
+          ⚠️ All resources in this environment are being deleted.
+        fields: repo,message,commit,author,action,eventName,ref,workflow
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }} 

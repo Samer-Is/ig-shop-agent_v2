@@ -1,0 +1,131 @@
+graph TB
+    %% External Services
+    subgraph "External APIs"
+        IG[Instagram Graph API]
+        META[Meta Webhooks]
+        OPENAI[Azure OpenAI GPT-4o]
+        STRIPE[Stripe Payment API]
+    end
+
+    %% Frontend Layer
+    subgraph "Frontend Layer"
+        MERCHANT_UI[Merchant Dashboard<br/>React + Vite + TypeScript]
+        VENDOR_UI[Vendor Admin Dashboard<br/>React + Vite + TypeScript]
+        AUTH_FLOW[OAuth 2.0 Flow<br/>Instagram Authentication]
+    end
+
+    %% API Gateway & Authentication
+    subgraph "API Layer"
+        API_GATEWAY[API Gateway<br/>Azure App Service]
+        AUTH_MIDDLEWARE[Authentication Middleware]
+        RATE_LIMITER[Rate Limiting & Throttling]
+    end
+
+    %% Core Business Logic
+    subgraph "Business Logic Layer"
+        ONBOARD_SVC[Onboarding Service<br/>Whitelist Validation]
+        AI_ENGINE[AI Conversation Engine<br/>RAG + Context Management]
+        ORDER_SVC[Order Management Service<br/>Entity Extraction]
+        WEBHOOK_SVC[Webhook Handler Service<br/>Instagram Events]
+        BILLING_SVC[Billing & Subscription Service]
+        NOTIFICATION_SVC[Notification Service<br/>Proactive Messaging]
+    end
+
+    %% Data Processing Layer
+    subgraph "Data Processing"
+        SPEECH_TO_TEXT[Azure Speech Services<br/>Voice Message Processing]
+        COGNITIVE_SEARCH[Azure Cognitive Search<br/>Knowledge Base Indexing]
+        FILE_PROCESSOR[File Processing Functions<br/>PDF/DOCX Ingestion]
+    end
+
+    %% Storage Layer
+    subgraph "Storage Layer"
+        COSMOS_DB[(Azure Cosmos DB<br/>merchants, orders, whitelist, conversations)]
+        BLOB_STORAGE[(Azure Blob Storage<br/>Knowledge Base Files)]
+        KEY_VAULT[(Azure Key Vault<br/>Secrets & Tokens)]
+    end
+
+    %% Background Services
+    subgraph "Background Services"
+        SCHEDULER[Azure Functions<br/>Scheduled Tasks]
+        CART_FOLLOW[Abandoned Cart Follow-up]
+        STOCK_NOTIFY[Back-in-Stock Notifications]
+        ANALYTICS[Analytics Aggregation]
+    end
+
+    %% DevOps & Infrastructure
+    subgraph "Infrastructure"
+        GITHUB_ACTIONS[GitHub Actions<br/>CI/CD Pipeline]
+        AZURE_MONITOR[Azure Monitor<br/>Logging & Metrics]
+        STATIC_WEB[Azure Static Web Apps<br/>Frontend Hosting]
+    end
+
+    %% External Flow
+    IG --> WEBHOOK_SVC
+    META --> WEBHOOK_SVC
+    
+    %% Frontend to API
+    MERCHANT_UI --> API_GATEWAY
+    VENDOR_UI --> API_GATEWAY
+    AUTH_FLOW --> ONBOARD_SVC
+
+    %% API Gateway Layer
+    API_GATEWAY --> AUTH_MIDDLEWARE
+    AUTH_MIDDLEWARE --> RATE_LIMITER
+    
+    %% Business Logic Connections
+    RATE_LIMITER --> ONBOARD_SVC
+    RATE_LIMITER --> AI_ENGINE
+    RATE_LIMITER --> ORDER_SVC
+    RATE_LIMITER --> BILLING_SVC
+    RATE_LIMITER --> NOTIFICATION_SVC
+
+    %% AI Engine Dependencies
+    AI_ENGINE --> OPENAI
+    AI_ENGINE --> COGNITIVE_SEARCH
+    AI_ENGINE --> SPEECH_TO_TEXT
+    AI_ENGINE --> IG
+
+    %% Data Flow
+    ONBOARD_SVC --> COSMOS_DB
+    ONBOARD_SVC --> KEY_VAULT
+    AI_ENGINE --> COSMOS_DB
+    ORDER_SVC --> COSMOS_DB
+    WEBHOOK_SVC --> AI_ENGINE
+    BILLING_SVC --> STRIPE
+    BILLING_SVC --> COSMOS_DB
+
+    %% File Processing
+    FILE_PROCESSOR --> BLOB_STORAGE
+    FILE_PROCESSOR --> COGNITIVE_SEARCH
+    COGNITIVE_SEARCH --> BLOB_STORAGE
+
+    %% Background Services
+    SCHEDULER --> CART_FOLLOW
+    SCHEDULER --> STOCK_NOTIFY
+    SCHEDULER --> ANALYTICS
+    CART_FOLLOW --> COSMOS_DB
+    CART_FOLLOW --> IG
+    STOCK_NOTIFY --> COSMOS_DB
+    STOCK_NOTIFY --> IG
+
+    %% Infrastructure
+    GITHUB_ACTIONS --> STATIC_WEB
+    GITHUB_ACTIONS --> API_GATEWAY
+    AZURE_MONITOR --> API_GATEWAY
+    AZURE_MONITOR --> COSMOS_DB
+
+    %% Styling
+    classDef frontend fill:#e1f5fe
+    classDef api fill:#f3e5f5
+    classDef business fill:#e8f5e8
+    classDef storage fill:#fff3e0
+    classDef external fill:#ffebee
+    classDef infrastructure fill:#f1f8e9
+
+    class MERCHANT_UI,VENDOR_UI,AUTH_FLOW frontend
+    class API_GATEWAY,AUTH_MIDDLEWARE,RATE_LIMITER api
+    class ONBOARD_SVC,AI_ENGINE,ORDER_SVC,WEBHOOK_SVC,BILLING_SVC,NOTIFICATION_SVC business
+    class COSMOS_DB,BLOB_STORAGE,KEY_VAULT storage
+    class IG,META,OPENAI,STRIPE external
+    class GITHUB_ACTIONS,AZURE_MONITOR,STATIC_WEB infrastructure 
